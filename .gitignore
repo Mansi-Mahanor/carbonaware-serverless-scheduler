@@ -1,0 +1,19 @@
+
+# Secrets and environment variables
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Frontend generated files
+node_modules/
+dist/
+
+# Local runtime database
+Backend/data/scheduler.db
