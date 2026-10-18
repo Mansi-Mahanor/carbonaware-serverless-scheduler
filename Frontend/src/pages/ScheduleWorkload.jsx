@@ -1,11 +1,9 @@
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { scheduleJob } from '../utils/api';
-import {
-  JOB_TYPES,
-  AWS_REGIONS,
-  PRIORITY_OPTIONS
-} from '../data/mockData';
+
+import { scheduleLiveJob } from '../utils/api';
+
 import {
   CalendarPlus,
   CheckCircle,
@@ -14,183 +12,313 @@ import {
   Globe,
   Zap,
   AlertCircle,
-  ArrowRight
+  ArrowRight,
 } from 'lucide-react';
 
-export default function ScheduleWorkload({ onAddJob, carbonForecast = [] }) {
+const WATTTIME_REGION = 'CAISO_NORTH';
+
+const JOB_TYPES = [
+  'CSV Processing',
+  'Data Analysis',
+  'Data Processing',
+  'Machine Learning',
+  'Report Generation',
+  'Database Backup',
+];
+
+const PRIORITY_OPTIONS = [
+  'Low',
+  'Normal',
+  'High',
+  'Critical',
+];
+
+export default function ScheduleWorkload({
+  onAddJob,
+  carbonForecast = [],
+}) {
   const navigate = useNavigate();
 
-  // Form State
   const [formData, setFormData] = useState({
     name: '',
     type: 'CSV Processing',
     estimatedRuntime: '30',
-    deadline: '17:00',
+    deadline: '23:00',
     priority: 'Normal',
-    preferredRegion: 'Mumbai (ap-south-1)',
-    allowRegionChange: true,
-    carbonAware: true
+    preferredRegion: WATTTIME_REGION,
+    allowRegionChange: false,
+    carbonAware: true,
   });
 
   const [errors, setErrors] = useState({});
   const [schedulingResult, setSchedulingResult] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
+  const handleChange = (event) => {
+    const { name, value, type, checked } = event.target;
+
+    setFormData((previous) => ({
+      ...previous,
+      [name]: type === 'checkbox' ? checked : value,
     }));
+
     if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: null }));
+      setErrors((previous) => ({
+        ...previous,
+        [name]: '',
+      }));
     }
   };
 
   const validate = () => {
     const newErrors = {};
+    const runtime = Number(formData.estimatedRuntime);
+
     if (!formData.name.trim()) {
-      newErrors.name = 'Job name is required';
+      newErrors.name = 'Job name is required.';
     }
-    if (!formData.estimatedRuntime || parseInt(formData.estimatedRuntime, 10) <= 0) {
-      newErrors.estimatedRuntime = 'Please enter a valid runtime in minutes';
+
+    if (
+      !Number.isFinite(runtime) ||
+      runtime <= 0 ||
+      runtime > 1440
+    ) {
+      newErrors.estimatedRuntime =
+        'Enter a runtime between 1 and 1440 minutes.';
     }
+
     if (!formData.deadline) {
-      newErrors.deadline = 'Deadline time is required';
+      newErrors.deadline = 'Deadline time is required.';
     }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e) => {
-  e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
 
-  if (!validate()) return;
+    if (!validate()) return;
 
-  setIsSubmitting(true);
-  setSchedulingResult(null);
+    setIsSubmitting(true);
+    setSchedulingResult(null);
+    setErrors({});
 
-  try {
-    const requestBody = {
-      job_name: formData.name,
-      type: formData.type,
-      estimatedRuntime: parseInt(formData.estimatedRuntime, 10),
-      deadline: formData.deadline,
-      preferredRegion: formData.preferredRegion,
-      allowRegionChange: formData.allowRegionChange,
-      carbonAware: formData.carbonAware,
-      priority: formData.priority,
+    try {
+      // Interpret the chosen deadline in the user's local timezone.
+      const [hours, minutes] = formData.deadline
+        .split(':')
+        .map(Number);
 
-      carbonForecast: carbonForecast
-    };
+      const now = new Date();
 
-    console.log("Sending to backend:", requestBody);
+      const localDeadline = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        hours,
+        minutes,
+        0,
+        0
+      );
 
-    const savedJob = await scheduleJob(requestBody);
+      // If today's deadline has passed, use tomorrow.
+      if (localDeadline <= now) {
+        localDeadline.setDate(localDeadline.getDate() + 1);
+      }
 
-    console.log("Backend response:", savedJob);
+      const requestBody = {
+        name: formData.name.trim(),
+        type: formData.type,
+        estimatedRuntime: Number(formData.estimatedRuntime),
+        deadlineUtc: localDeadline.toISOString(),
+        region: WATTTIME_REGION,
+        preferredRegion: WATTTIME_REGION,
+        carbonAware: formData.carbonAware,
+        priority: formData.priority,
+        horizonHours: 24,
+      };
 
-    // Add actual database job to React state
-    onAddJob(savedJob);
+      console.log(
+        'Submitting WattTime live workload:',
+        requestBody
+      );
 
-    // Display backend scheduling result
-    setSchedulingResult({
-      selectedTime: savedJob.selectedTime,
-      selectedRegion: savedJob.region,
-      carbonIntensity: savedJob.carbonIntensity,
-      estimatedCO2: savedJob.estimatedCO2,
-      estimatedRuntime: savedJob.estimatedRuntime,
-      deadline: savedJob.deadline,
-      status: savedJob.status,
-      jobId: savedJob.jobId,
-      jobName: savedJob.name
-    });
+      const result = await scheduleLiveJob(requestBody);
 
-  } catch (error) {
+      console.log('Live scheduling response:', result);
 
-    console.error("Scheduling failed:", error);
+      if (result.status !== 'Scheduled') {
+        throw new Error(
+          result.reason ||
+          result.message ||
+          'No feasible execution window was found. Check the forecast coverage and deadline.'
+        );
+      }
 
-    setErrors({
-      submit: error.message || "Failed to schedule workload"
-    });
+      if (result.savedJob && onAddJob) {
+        onAddJob(result.savedJob);
+      }
 
-  } finally {
+      setSchedulingResult({
+        selectedTime:
+          result.selectedTimeUtc ||
+          result.selectedTime ||
+          'Not provided',
 
-    setIsSubmitting(false);
+        selectedRegion:
+          result.region ||
+          WATTTIME_REGION,
 
-  }
-};
+        carbonIntensity: Number(
+          result.averageCarbonIntensityGramsPerKWh
+        ),
 
+        estimatedCO2:
+          result.estimatedCO2Grams ?? null,
+
+        estimatedRuntime:
+          result.estimatedRuntime ??
+          Number(formData.estimatedRuntime),
+
+        deadline:
+          result.deadlineUtc ||
+          localDeadline.toISOString(),
+
+        status: result.status,
+        jobId: result.jobId || result.savedJob?.job_id,
+        jobName: formData.name,
+      });
+    } catch (error) {
+      console.error('Live scheduling failed:', error);
+
+      setErrors({
+        submit:
+          error.message ||
+          'Failed to schedule the workload.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const formatDateTime = (value) => {
+    if (!value || value === 'Not provided') {
+      return value || 'Not provided';
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleString();
+  };
 
   return (
     <div className="page-container">
       <div className="page-header-block">
-        <h1 className="page-title">Schedule New Cloud Workload</h1>
+        <h1 className="page-title">
+          Schedule New Cloud Workload
+        </h1>
+
         <p className="page-description">
-          Submit your serverless job parameters. Our scheduler will compute the optimal time slot
-          and region to minimize carbon intensity ($gCO_2eq/kWh$).
+          Submit workload parameters. The scheduler uses
+          WattTime marginal emissions forecasts to find a
+          feasible, lower-carbon execution window before
+          your deadline.
         </p>
       </div>
 
       <div className="schedule-layout">
-        {/* Form Card */}
         <div className="card schedule-form-card">
           <div className="card-header">
             <div className="card-title-group">
-              <CalendarPlus size={20} className="text-green-accent" />
-              <h2 className="card-title">Workload Specifications</h2>
+              <CalendarPlus
+                size={20}
+                className="text-green-accent"
+              />
+              <h2 className="card-title">
+                Workload Specifications
+              </h2>
             </div>
           </div>
-          <div className="card-body">
-            <form onSubmit={handleSubmit} className="form-grid">
 
-              {/* Job Name */}
+          <div className="card-body">
+            <form
+              onSubmit={handleSubmit}
+              className="form-grid"
+            >
               <div className="form-group full-width">
-                <label className="form-label required">Job Name</label>
+                <label className="form-label required">
+                  Job Name
+                </label>
+
                 <input
                   type="text"
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
                   placeholder="e.g. Daily Data Analytics Pipeline"
-                  className={`form-input ${errors.name ? 'input-error' : ''}`}
+                  className={`form-input ${
+                    errors.name ? 'input-error' : ''
+                  }`}
                 />
-                {errors.name && <span className="field-error-text">{errors.name}</span>}
+
+                {errors.name && (
+                  <span className="field-error-text">
+                    {errors.name}
+                  </span>
+                )}
               </div>
 
-              {/* Job Type */}
               <div className="form-group">
-                <label className="form-label">Job Type</label>
+                <label className="form-label">
+                  Job Type
+                </label>
+
                 <select
                   name="type"
                   value={formData.type}
                   onChange={handleChange}
                   className="form-select"
                 >
-                  {JOB_TYPES.map(t => (
-                    <option key={t} value={t}>{t}</option>
+                  {JOB_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
                   ))}
                 </select>
               </div>
 
-              {/* Priority */}
               <div className="form-group">
-                <label className="form-label">Priority</label>
+                <label className="form-label">
+                  Priority
+                </label>
+
                 <select
                   name="priority"
                   value={formData.priority}
                   onChange={handleChange}
                   className="form-select"
                 >
-                  {PRIORITY_OPTIONS.map(p => (
-                    <option key={p} value={p}>{p}</option>
+                  {PRIORITY_OPTIONS.map((priority) => (
+                    <option
+                      key={priority}
+                      value={priority}
+                    >
+                      {priority}
+                    </option>
                   ))}
                 </select>
               </div>
 
-              {/* Estimated Runtime */}
               <div className="form-group">
-                <label className="form-label required">Estimated Runtime (minutes)</label>
+                <label className="form-label required">
+                  Estimated Runtime (minutes)
+                </label>
+
                 <div className="input-group">
                   <input
                     type="number"
@@ -199,57 +327,69 @@ export default function ScheduleWorkload({ onAddJob, carbonForecast = [] }) {
                     onChange={handleChange}
                     min="1"
                     max="1440"
-                    placeholder="30"
-                    className={`form-input ${errors.estimatedRuntime ? 'input-error' : ''}`}
+                    className={`form-input ${
+                      errors.estimatedRuntime
+                        ? 'input-error'
+                        : ''
+                    }`}
                   />
+
                   <span className="input-addon">min</span>
                 </div>
-                {errors.estimatedRuntime && <span className="field-error-text">{errors.estimatedRuntime}</span>}
+
+                {errors.estimatedRuntime && (
+                  <span className="field-error-text">
+                    {errors.estimatedRuntime}
+                  </span>
+                )}
               </div>
 
-              {/* Deadline */}
               <div className="form-group">
-                <label className="form-label required">Deadline (HH:MM)</label>
+                <label className="form-label required">
+                  Deadline (HH:MM)
+                </label>
+
                 <input
                   type="time"
                   name="deadline"
                   value={formData.deadline}
                   onChange={handleChange}
-                  className={`form-input ${errors.deadline ? 'input-error' : ''}`}
+                  className={`form-input ${
+                    errors.deadline ? 'input-error' : ''
+                  }`}
                 />
-                {errors.deadline && <span className="field-error-text">{errors.deadline}</span>}
-              </div>
 
-              {/* Preferred Region */}
-              <div className="form-group full-width">
-                <label className="form-label">Preferred AWS Region</label>
-                <select
-                  name="preferredRegion"
-                  value={formData.preferredRegion}
-                  onChange={handleChange}
-                  className="form-select"
-                >
-                  {AWS_REGIONS.map(r => (
-                    <option key={r.id} value={r.name}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Toggles */}
-              <div className="form-group full-width checkbox-group-box">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    name="allowRegionChange"
-                    checked={formData.allowRegionChange}
-                    onChange={handleChange}
-                  />
-                  <span className="checkbox-custom" />
-                  <span className="checkbox-text">
-                    <strong>Allow Region Change:</strong> Permit algorithm to automatically pick a greener AWS region if available.
+                {errors.deadline && (
+                  <span className="field-error-text">
+                    {errors.deadline}
                   </span>
+                )}
+              </div>
+
+              <div className="form-group full-width">
+                <label className="form-label">
+                  WattTime Forecast Region
                 </label>
 
+                <select
+                  name="preferredRegion"
+                  value={WATTTIME_REGION}
+                  disabled
+                  className="form-select"
+                >
+                  <option value={WATTTIME_REGION}>
+                    CAISO_NORTH — Northern California
+                  </option>
+                </select>
+
+                <small>
+                  Live forecast region configured for this
+                  integration. This is a grid region, not an
+                  AWS data-center region.
+                </small>
+              </div>
+
+              <div className="form-group full-width checkbox-group-box">
                 <label className="checkbox-label">
                   <input
                     type="checkbox"
@@ -257,89 +397,158 @@ export default function ScheduleWorkload({ onAddJob, carbonForecast = [] }) {
                     checked={formData.carbonAware}
                     onChange={handleChange}
                   />
+
                   <span className="checkbox-custom" />
+
                   <span className="checkbox-text">
-                    <strong>Carbon-Aware Scheduling (ON/OFF):</strong> Minimize carbon footprint ($gCO_2eq/kWh$) before deadline.
+                    <strong>
+                      Carbon-Aware Scheduling
+                    </strong>
+                    : Prefer lower forecast emissions while
+                    respecting the deadline.
                   </span>
                 </label>
+
+                <p className="checkbox-text">
+                  <strong>Forecast source:</strong> WattTime
+                  {' · '}
+                  <strong>Signal:</strong> MOER
+                  {' · '}
+                  <strong>Interval:</strong> 5 minutes
+                </p>
               </div>
 
-              {/* Submit Button */}
+              {errors.submit && (
+                <div
+                  className="field-error-text full-width"
+                  role="alert"
+                >
+                  <AlertCircle
+                    size={16}
+                    style={{
+                      display: 'inline',
+                      marginRight: 6,
+                    }}
+                  />
+                  {errors.submit}
+                </div>
+              )}
+
               <div className="form-actions full-width">
                 <button
                   type="submit"
                   disabled={isSubmitting}
                   className="btn btn-primary btn-lg full-width"
                 >
-                  {isSubmitting ? 'Computing Carbon-Aware Slot...' : 'Submit Workload'}
+                  {isSubmitting
+                    ? 'Computing Live Carbon-Aware Slot...'
+                    : 'Submit Workload'}
                 </button>
-                {errors.submit && (
-  <div className="field-error-text">
-    {errors.submit}
-  </div>
-)}
               </div>
             </form>
           </div>
         </div>
 
-        {/* Scheduling Result Box */}
         <div className="schedule-result-sidebar">
           {schedulingResult ? (
             <div className="card result-card animate-fade-in">
               <div className="result-card-header">
-                <CheckCircle size={24} className="text-green-accent" />
+                <CheckCircle
+                  size={24}
+                  className="text-green-accent"
+                />
+
                 <div>
-                  <h3 className="result-title">Scheduling Result</h3>
-                  <span className="result-job-id">{schedulingResult.jobId}</span>
+                  <h3 className="result-title">
+                    Scheduling Result
+                  </h3>
+
+                  <span className="result-job-id">
+                    {schedulingResult.jobId || 'Job saved'}
+                  </span>
                 </div>
               </div>
 
               <div className="result-body">
                 <div className="result-item highlight-item">
                   <span className="result-label">
-                    <Clock size={16} /> Recommended Execution Time
+                    <Clock size={16} />
+                    Recommended Execution Time
                   </span>
+
                   <span className="result-value text-green-accent">
-                    {schedulingResult.selectedTime}
+                    {formatDateTime(
+                      schedulingResult.selectedTime
+                    )}
                   </span>
                 </div>
 
                 <div className="result-item">
                   <span className="result-label">
-                    <Globe size={16} /> Selected Region
+                    <Globe size={16} />
+                    Forecast Region
                   </span>
-                  <span className="result-value">{schedulingResult.selectedRegion}</span>
-                </div>
 
-                <div className="result-item">
-                  <span className="result-label">
-                    <Leaf size={16} /> Predicted Carbon Intensity
-                  </span>
                   <span className="result-value">
-                    {Number(schedulingResult.carbonIntensity).toFixed(0)} gCO₂eq/kWh
+                    {schedulingResult.selectedRegion}
                   </span>
                 </div>
 
                 <div className="result-item">
                   <span className="result-label">
-                    <Zap size={16} /> Estimated CO₂
+                    <Leaf size={16} />
+                    Predicted Carbon Intensity
                   </span>
-                  <span className="result-value">{schedulingResult.estimatedCO2} gCO₂</span>
+
+                  <span className="result-value">
+                    {Number.isFinite(
+                      schedulingResult.carbonIntensity
+                    )
+                      ? `${schedulingResult.carbonIntensity.toFixed(2)} gCO₂/kWh`
+                      : 'Not provided'}
+                  </span>
                 </div>
 
                 <div className="result-item">
-                  <span className="result-label">Estimated Runtime</span>
-                  <span className="result-value">{schedulingResult.estimatedRuntime} minutes</span>
+                  <span className="result-label">
+                    <Zap size={16} />
+                    Estimated CO₂
+                  </span>
+
+                  <span className="result-value">
+                    {schedulingResult.estimatedCO2 != null
+                      ? `${schedulingResult.estimatedCO2} g CO₂`
+                      : 'Not provided'}
+                  </span>
                 </div>
 
                 <div className="result-item">
-                  <span className="result-label">Deadline</span>
-                  <span className="result-value">{schedulingResult.deadline}</span>
+                  <span className="result-label">
+                    Estimated Runtime
+                  </span>
+
+                  <span className="result-value">
+                    {schedulingResult.estimatedRuntime} minutes
+                  </span>
                 </div>
 
                 <div className="result-item">
-                  <span className="result-label">Scheduling Status</span>
+                  <span className="result-label">
+                    Deadline
+                  </span>
+
+                  <span className="result-value">
+                    {formatDateTime(
+                      schedulingResult.deadline
+                    )}
+                  </span>
+                </div>
+
+                <div className="result-item">
+                  <span className="result-label">
+                    Scheduling Status
+                  </span>
+
                   <span className="result-status-badge badge-scheduled">
                     {schedulingResult.status}
                   </span>
@@ -348,26 +557,51 @@ export default function ScheduleWorkload({ onAddJob, carbonForecast = [] }) {
 
               <div className="result-footer">
                 <button
+                  type="button"
                   className="btn btn-outline full-width"
-                  onClick={() => navigate(`/jobs/${schedulingResult.jobId}`)}
+                  onClick={() => {
+                    if (schedulingResult.jobId) {
+                      navigate(
+                        `/jobs/${schedulingResult.jobId}`
+                      );
+                    } else {
+                      navigate('/jobs');
+                    }
+                  }}
                 >
-                  <span>View Details & Timeline</span>
+                  <span>View Job Details</span>
                   <ArrowRight size={16} />
                 </button>
               </div>
             </div>
           ) : (
             <div className="card result-placeholder-card">
-              <Leaf size={48} className="placeholder-icon" />
+              <Leaf
+                size={48}
+                className="placeholder-icon"
+              />
+
               <h3>Scheduling Analysis</h3>
+
               <p>
-                Fill out the workload parameters on the left and click
-                <strong> Submit Workload</strong> to execute the carbon-optimization algorithm.
+                Enter the workload parameters and submit the
+                form to find a feasible execution window
+                using the live WattTime forecast.
               </p>
+
               <div className="placeholder-info-box">
                 <AlertCircle size={16} />
-                <span>Optimization formula: argmin(Carbon Intensity) subject to completion time ≤ deadline.</span>
+
+                <span>
+                  The scheduler minimizes forecast carbon
+                  intensity subject to the workload finishing
+                  before its deadline.
+                </span>
               </div>
+
+              <p>
+                Forecast points available: {carbonForecast.length}
+              </p>
             </div>
           )}
         </div>

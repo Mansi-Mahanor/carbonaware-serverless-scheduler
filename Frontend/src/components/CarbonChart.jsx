@@ -1,3 +1,4 @@
+
 import React from 'react';
 import {
   ResponsiveContainer,
@@ -8,86 +9,188 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ReferenceLine
+  ReferenceLine,
 } from 'recharts';
 
-export default function CarbonChart({ data = [], selectedRegion = 'Mumbai' }) {
-  // Region color mapping
-  const regionColors = {
-    Mumbai: '#10b981', // Sustainability Green
-    Singapore: '#f59e0b', // Amber
-    Tokyo: '#3b82f6', // Blue
-    'US East': '#8b5cf6' // Purple
-  };
+const REGION_LABEL = 'CAISO_NORTH';
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="custom-chart-tooltip">
-          <p className="tooltip-time">Time Slot: <strong>{label}</strong></p>
-          <div className="tooltip-items">
-            {payload.map((entry) => (
-              <div key={entry.name} className="tooltip-item">
-                <span className="tooltip-dot" style={{ backgroundColor: entry.color }} />
-                <span className="tooltip-name">{entry.name}:</span>
-                <span className="tooltip-val">{entry.value} gCO₂eq/kWh</span>
-              </div>
-            ))}
+export default function CarbonChart({
+  data = [],
+  selectedRegion = REGION_LABEL,
+}) {
+  // Adapt WattTime forecast points to the chart's data format.
+  const chartData = (Array.isArray(data) ? data : [])
+    .map((point) => {
+      const intensity = Number(
+        point?.carbonIntensityGramsPerKWh
+      );
+
+      if (
+        !point?.time ||
+        !Number.isFinite(intensity)
+      ) {
+        return null;
+      }
+
+      const date = new Date(point.time);
+
+      return {
+        time: point.time,
+        displayTime: Number.isNaN(date.getTime())
+          ? point.time
+          : date.toLocaleString([], {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+        carbonIntensity: intensity,
+      };
+    })
+    .filter(Boolean);
+
+  const CustomTooltip = ({ active, payload }) => {
+    if (!active || !payload?.length) {
+      return null;
+    }
+
+    const point = payload[0]?.payload;
+
+    return (
+      <div className="custom-chart-tooltip">
+        <p className="tooltip-time">
+          Forecast time:{' '}
+          <strong>
+            {point?.displayTime || 'Unavailable'}
+          </strong>
+        </p>
+
+        <div className="tooltip-items">
+          <div className="tooltip-item">
+            <span
+              className="tooltip-dot"
+              style={{ backgroundColor: '#10b981' }}
+            />
+
+            <span className="tooltip-name">
+              {REGION_LABEL} MOER:
+            </span>
+
+            <span className="tooltip-val">
+              {Number(point?.carbonIntensity).toFixed(2)}
+              {' gCO₂/kWh'}
+            </span>
           </div>
         </div>
-      );
-    }
-    return null;
+      </div>
+    );
   };
+
+  if (chartData.length === 0) {
+    return (
+      <div
+        className="chart-empty-state"
+        role="status"
+        style={{
+          minHeight: 320,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          padding: 24,
+        }}
+      >
+        <p>
+          No valid WattTime forecast points are available
+          to plot. Check the live forecast API response.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="chart-wrapper">
+      <div
+        style={{
+          marginBottom: 12,
+          fontSize: 13,
+          color: '#64748b',
+        }}
+      >
+        Region: <strong>{selectedRegion}</strong>
+        {' · '}
+        Forecast points: <strong>{chartData.length}</strong>
+      </div>
+
       <ResponsiveContainer width="100%" height={320}>
-        <LineChart data={data} margin={{ top: 20, right: 30, left: 10, bottom: 10 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-          <XAxis dataKey="time" stroke="#64748b" fontSize={12} tickLine={false} />
-          <YAxis stroke="#64748b" fontSize={12} tickLine={false} unit=" g" />
+        <LineChart
+          data={chartData}
+          margin={{
+            top: 20,
+            right: 30,
+            left: 15,
+            bottom: 25,
+          }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="#e2e8f0"
+          />
+
+          <XAxis
+            dataKey="displayTime"
+            stroke="#64748b"
+            fontSize={11}
+            tickLine={false}
+            minTickGap={35}
+            interval="preserveStartEnd"
+          />
+
+          <YAxis
+            stroke="#64748b"
+            fontSize={12}
+            tickLine={false}
+            axisLine={false}
+            width={75}
+            label={{
+              value: 'MOER (gCO₂/kWh)',
+              angle: -90,
+              position: 'insideLeft',
+              style: {
+                textAnchor: 'middle',
+                fill: '#64748b',
+              },
+            }}
+          />
+
           <Tooltip content={<CustomTooltip />} />
-          <Legend wrapperStyle={{ paddingTop: '10px' }} />
 
-          {/* Low carbon baseline reference line at 135 gCO2eq/kWh */}
-          <ReferenceLine y={135} stroke="#10b981" strokeDasharray="4 4" label={{ value: 'Low Carbon Threshold (<=135)', fill: '#10b981', fontSize: 11, position: 'insideBottomRight' }} />
+          <Legend
+            wrapperStyle={{ paddingTop: 10 }}
+          />
+
+          <ReferenceLine
+            y={135}
+            stroke="#10b981"
+            strokeDasharray="4 4"
+            label={{
+              value: 'Illustrative threshold: 135',
+              fill: '#059669',
+              fontSize: 10,
+              position: 'insideTopRight',
+            }}
+          />
 
           <Line
             type="monotone"
-            dataKey="Mumbai"
-            stroke={regionColors.Mumbai}
-            strokeWidth={selectedRegion === 'Mumbai' ? 3 : 1.5}
-            strokeOpacity={selectedRegion === 'Mumbai' || selectedRegion === 'All' ? 1 : 0.4}
-            dot={{ r: 3 }}
-            activeDot={{ r: 6 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="Singapore"
-            stroke={regionColors.Singapore}
-            strokeWidth={selectedRegion === 'Singapore' ? 3 : 1.5}
-            strokeOpacity={selectedRegion === 'Singapore' || selectedRegion === 'All' ? 1 : 0.4}
-            dot={{ r: 3 }}
-            activeDot={{ r: 6 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="Tokyo"
-            stroke={regionColors.Tokyo}
-            strokeWidth={selectedRegion === 'Tokyo' ? 3 : 1.5}
-            strokeOpacity={selectedRegion === 'Tokyo' || selectedRegion === 'All' ? 1 : 0.4}
-            dot={{ r: 3 }}
-            activeDot={{ r: 6 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="US East"
-            stroke={regionColors['US East']}
-            strokeWidth={selectedRegion === 'US East' ? 3 : 1.5}
-            strokeOpacity={selectedRegion === 'US East' || selectedRegion === 'All' ? 1 : 0.4}
-            dot={{ r: 3 }}
-            activeDot={{ r: 6 }}
+            dataKey="carbonIntensity"
+            name="WattTime MOER Forecast"
+            stroke="#10b981"
+            strokeWidth={2.5}
+            dot={false}
+            activeDot={{ r: 5 }}
+            connectNulls={false}
+            isAnimationActive={false}
           />
         </LineChart>
       </ResponsiveContainer>
