@@ -101,10 +101,17 @@ def get_live_forecast(
                 "WattTime forecast response must be a JSON object."
             )
 
-        raw_points = payload.get("data") 
-        
-        
-        raw_pomtes = payload.get ("data ")
+        raw_points = payload.get("data")
+
+        if not isinstance(raw_points, list):
+            raise RuntimeError(
+                "WattTime response did not contain a valid data list."
+            )
+
+        if not raw_points:
+            raise RuntimeError(
+                "WattTime returned an empty forecast."
+            )
        
         # Temporary diagnostic: inspect forecast values.
         meta = payload.get("meta", {})
@@ -134,16 +141,6 @@ def get_live_forecast(
         LOGGER.warning("First positive-valued points: %s", nonzero_points[:3])
         LOGGER.warning("Last 5 forecast points: %s", raw_points[-5:])
 
-
-        if not isinstance(raw_points, list):
-            raise RuntimeError(
-                "WattTime response did not contain a valid data list."
-            )
-
-        if not raw_points:
-            raise RuntimeError(
-                "WattTime returned an empty forecast."
-            )
 
         points = []
         invalid_count = 0

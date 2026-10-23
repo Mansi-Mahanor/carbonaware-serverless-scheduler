@@ -148,6 +148,14 @@ def schedule():
         # Run scheduling algorithm
         result = schedule_workload(job, carbon_forecast)
 
+        if result.get("status") != "Scheduled":
+            return jsonify({
+                "success": True,
+                "message": result.get("reason", "No feasible scheduling window was found."),
+                "data": result,
+                "saved": False
+            }), 200
+
         # Prepare data for database
         job_to_save = {
             "name": job.get("job_name", job.get("name", "Unnamed Job")),

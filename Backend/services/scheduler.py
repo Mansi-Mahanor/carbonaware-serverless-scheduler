@@ -134,8 +134,8 @@ def schedule_workload(job, carbon_forecast):
     if not feasible_slots:
 
         return {
-            "status": "Scheduled",
-            "isFallback": True,
+            "status": "Not Scheduled",
+            "isFallback": False,
             "reason":
                 "No slot completed before deadline."
         }
