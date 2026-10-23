@@ -136,25 +136,23 @@ export default function Settings({ settings = {}, onUpdateSettings, onResetData 
             <div className="status-item-box">
               <span className="status-item-label">Carbon Intensity API Status</span>
               <span className="status-item-value text-green-accent font-medium flex-center gap-xs">
-                <span className="badge-dot dot-green" /> Healthy (Mock Electricity Maps Feed)
+                <span className="badge-dot dot-green" /> Connected (WattTime API v3)
               </span>
             </div>
 
             <div className="status-item-box">
-              <span className="status-item-label">Cloud Backend Connection</span>
+              <span className="status-item-label">Scheduler Backend Connection</span>
               <span className="status-item-value text-muted font-mono">
-                Standalone Mode (Mock Local Storage)
+                Flask API & SQLite on http://127.0.0.1:5000
               </span>
             </div>
 
             <div className="backend-integration-note">
-              <h4><Code size={16} /> Backend Architecture Blueprint</h4>
+              <h4><Code size={16} /> Grid Balancing Authority vs Cloud Region</h4>
               <p>
-                To connect this frontend to AWS cloud infrastructure later, update the
-                API service endpoints in <code>src/services/api.js</code> to target your
-                <strong> Amazon API Gateway</strong> endpoints connected to
-                <strong> AWS Lambda</strong>, <strong>DynamoDB</strong>, and
-                <strong> Step Functions</strong>.
+                Marginal emissions rates are queried from WattTime for balancing authorities such as
+                <strong> CAISO_NORTH</strong> (Northern California grid). Serverless workloads can be scheduled in
+                matching cloud regions (e.g. AWS <code>us-west-1</code>).
               </p>
             </div>
 

@@ -50,10 +50,28 @@ def init_db():
             status TEXT NOT NULL,
             priority TEXT NOT NULL,
 
+            file_name TEXT,
+            file_size_bytes INTEGER,
+            file_type TEXT,
+
             created_at TEXT NOT NULL,
             completed_at TEXT
         )
     """)
+
+    # Safe, backward-compatible migration for existing SQLite databases
+    cursor = connection.execute("PRAGMA table_info(jobs)")
+    existing_columns = {row["name"] for row in cursor.fetchall()}
+
+    columns_to_add = [
+        ("file_name", "TEXT"),
+        ("file_size_bytes", "INTEGER"),
+        ("file_type", "TEXT")
+    ]
+
+    for col_name, col_type in columns_to_add:
+        if col_name not in existing_columns:
+            connection.execute(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_type}")
 
     connection.commit()
     connection.close()

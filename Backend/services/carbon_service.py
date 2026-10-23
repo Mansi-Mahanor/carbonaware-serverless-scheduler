@@ -74,7 +74,8 @@ def get_current_intensity(region="Mumbai"):
     return {
         "time": current_slot["time"],
         "region": region,
-        "carbonIntensity": intensity
+        "carbonIntensity": intensity,
+        "carbonIntensityGramsPerKWh": intensity
     }
 
 
@@ -91,7 +92,8 @@ def get_region_forecast(region):
 
             result.append({
                 "time": slot["time"],
-                "carbonIntensity": slot[region]
+                "carbonIntensity": slot[region],
+                "carbonIntensityGramsPerKWh": slot[region]
             })
 
     return result

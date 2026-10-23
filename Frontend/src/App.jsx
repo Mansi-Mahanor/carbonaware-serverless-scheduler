@@ -39,29 +39,61 @@ const DEFAULT_REGION = 'CAISO_NORTH';
  * value returned by the API. The backend response must
  * be checked separately if the zeros look suspicious.
  */
-const getLatestForecastPoint = (forecastData) => {
-  if (!Array.isArray(forecastData)) {
+const getLatestForecastPoint = (forecastData, intervalSeconds = 300) => {
+  if (!Array.isArray(forecastData) || forecastData.length === 0) {
     return null;
   }
 
+  const intervalMs = (intervalSeconds || 300) * 1000;
   const now = Date.now();
 
   const validPoints = forecastData
-    .map((point) => ({
-      ...point,
-      timestamp: new Date(point.time).getTime(),
-      intensity: Number(point.carbonIntensityGramsPerKWh),
-    }))
-    .filter(
-      (point) =>
-        point.time &&
-        Number.isFinite(point.timestamp) &&
-        point.timestamp >= now &&
-        Number.isFinite(point.intensity)
-    )
+    .map((point) => {
+      const time = point?.time || point?.point_time || point?.timestamp;
+      const rawIntensity =
+        point?.carbonIntensity ??
+        point?.carbonIntensityGramsPerKWh ??
+        point?.value;
+      const intensity = Number(rawIntensity);
+      if (!time || !Number.isFinite(intensity) || intensity < 0) {
+        return null;
+      }
+      const timestamp = new Date(time).getTime();
+      if (Number.isNaN(timestamp)) {
+        return null;
+      }
+      return {
+        ...point,
+        time,
+        timestamp,
+        intensity,
+        carbonIntensity: intensity,
+        carbonIntensityGramsPerKWh: intensity,
+      };
+    })
+    .filter(Boolean)
     .sort((a, b) => a.timestamp - b.timestamp);
 
-  return validPoints.length > 0 ? validPoints[0] : null;
+  if (validPoints.length === 0) {
+    return null;
+  }
+
+  // 1. Point that covers the current active 5-minute interval
+  const activePoint = validPoints.find(
+    (p) => p.timestamp <= now && now < p.timestamp + intervalMs
+  );
+  if (activePoint) {
+    return activePoint;
+  }
+
+  // 2. Nearest upcoming point
+  const nextPoint = validPoints.find((p) => p.timestamp >= now);
+  if (nextPoint) {
+    return nextPoint;
+  }
+
+  // 3. Fallback to most recent point
+  return validPoints[validPoints.length - 1];
 };
 
 // --------------------------------------------------
@@ -139,6 +171,23 @@ const normalizeJob = (job = {}) => ({
   status: job.status ?? 'Scheduled',
   priority: job.priority ?? 'Normal',
 
+  fileName:
+    job.fileName ??
+    job.file_name ??
+    null,
+
+  fileSizeBytes:
+    job.fileSizeBytes != null
+      ? Number(job.fileSizeBytes)
+      : job.file_size_bytes != null
+        ? Number(job.file_size_bytes)
+        : null,
+
+  fileType:
+    job.fileType ??
+    job.file_type ??
+    null,
+
   createdAt:
     job.createdAt ??
     job.created_at ??
@@ -203,30 +252,46 @@ export default function App() {
         );
       }
 
-      const latestPoint = getLatestForecastPoint(forecastPoints);
+      const latestPoint = getLatestForecastPoint(
+        forecastPoints,
+        forecastResult?.intervalSeconds || 300
+      );
 
-      // A forecast may exist but contain no valid future points.
-      if (!latestPoint) {
-        throw new Error(
-          'No valid future WattTime forecast point is available.'
-        );
-      }
+      // Normalize all forecast points with consistent keys
+      const normalizedForecast = forecastPoints
+        .map((point) => {
+          const time = point?.time || point?.point_time;
+          const rawIntensity =
+            point?.carbonIntensity ??
+            point?.carbonIntensityGramsPerKWh ??
+            point?.value;
+          const intensity = Number(rawIntensity);
+          if (!time || !Number.isFinite(intensity) || intensity < 0) {
+            return null;
+          }
+          return {
+            ...point,
+            time,
+            carbonIntensity: intensity,
+            carbonIntensityGramsPerKWh: intensity,
+          };
+        })
+        .filter(Boolean);
 
-      // Update the application only after validating the response.
       setJobs(
         Array.isArray(jobsData)
           ? jobsData.map(normalizeJob)
           : []
       );
 
-      setCarbonForecast(forecastPoints);
-      setCurrentIntensity(latestPoint.intensity);
+      setCarbonForecast(normalizedForecast);
+      setCurrentIntensity(latestPoint ? latestPoint.intensity : null);
 
       setForecastInfo({
         region: forecastResult.region || DEFAULT_REGION,
         source: forecastResult.source || 'WattTime API V3',
         signalType: forecastResult.signalType || 'co2_moer',
-        timestamp: latestPoint.time,
+        timestamp: latestPoint ? latestPoint.time : null,
         intervalSeconds: forecastResult.intervalSeconds || 300,
         convertedUnit:
           forecastResult.convertedUnit || 'g CO2/kWh',
@@ -274,6 +339,16 @@ export default function App() {
         (job) => job.id !== normalizedJob.id
       ),
     ]);
+  };
+
+  const handleUpdateJob = (updatedJob) => {
+    const normalizedJob = normalizeJob(updatedJob);
+
+    setJobs((previousJobs) =>
+      previousJobs.map((job) =>
+        job.id === normalizedJob.id ? normalizedJob : job
+      )
+    );
   };
 
   // ------------------------------------------------
@@ -362,12 +437,12 @@ export default function App() {
 
               <Route
                 path="/jobs"
-                element={<Jobs jobs={jobs} />}
+                element={<Jobs jobs={jobs} onRefreshJobs={loadData} />}
               />
 
               <Route
                 path="/jobs/:id"
-                element={<JobDetails jobs={jobs} />}
+                element={<JobDetails jobs={jobs} onUpdateJob={handleUpdateJob} />}
               />
 
               <Route

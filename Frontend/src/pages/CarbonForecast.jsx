@@ -21,7 +21,9 @@ export default function CarbonForecast({
     : [];
 
   const getIntensity = (point) => {
-    const value = Number(point?.carbonIntensityGramsPerKWh);
+    const raw = point?.carbonIntensityGramsPerKWh ?? point?.carbonIntensity;
+    if (raw === null || raw === undefined) return null;
+    const value = Number(raw);
     return Number.isFinite(value) ? value : null;
   };
 

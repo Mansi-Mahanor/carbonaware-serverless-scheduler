@@ -56,11 +56,17 @@ export default function Dashboard({
   const validForecast = (
     Array.isArray(carbonForecast) ? carbonForecast : []
   )
-    .map((point) => ({
-      ...point,
-      intensity: Number(point.carbonIntensityGramsPerKWh),
-      timestamp: new Date(point.time),
-    }))
+    .map((point) => {
+      const raw =
+        point?.carbonIntensityGramsPerKWh ?? point?.carbonIntensity;
+      const intensity =
+        raw !== null && raw !== undefined ? Number(raw) : NaN;
+      return {
+        ...point,
+        intensity,
+        timestamp: new Date(point?.time),
+      };
+    })
     .filter(
       (point) =>
         point.time &&
@@ -68,7 +74,7 @@ export default function Dashboard({
         !Number.isNaN(point.timestamp.getTime())
     )
     .filter(
-      (point) => point.timestamp.getTime() >= Date.now()
+      (point) => point.timestamp.getTime() + 300000 >= Date.now()
     );
 
   const bestSlot =
@@ -95,8 +101,11 @@ export default function Dashboard({
     });
   };
 
-  const intensity = Number(currentIntensity);
-  const hasIntensity = Number.isFinite(intensity);
+  const hasIntensity =
+    currentIntensity !== null &&
+    currentIntensity !== undefined &&
+    Number.isFinite(Number(currentIntensity));
+  const intensity = hasIntensity ? Number(currentIntensity) : null;
 
   const region = forecastInfo.region || REGION;
   const source = forecastInfo.source || 'WattTime';

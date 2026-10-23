@@ -13,6 +13,8 @@ import {
   Zap,
   AlertCircle,
   ArrowRight,
+  UploadCloud,
+  FileText,
 } from 'lucide-react';
 
 const WATTTIME_REGION = 'CAISO_NORTH';
@@ -50,6 +52,7 @@ export default function ScheduleWorkload({
     carbonAware: true,
   });
 
+  const [attachedFile, setAttachedFile] = useState(null);
   const [errors, setErrors] = useState({});
   const [schedulingResult, setSchedulingResult] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -144,7 +147,7 @@ export default function ScheduleWorkload({
         requestBody
       );
 
-      const result = await scheduleLiveJob(requestBody);
+      const result = await scheduleLiveJob(requestBody, attachedFile);
 
       console.log('Live scheduling response:', result);
 
@@ -188,6 +191,12 @@ export default function ScheduleWorkload({
         status: result.status,
         jobId: result.jobId || result.savedJob?.job_id,
         jobName: formData.name,
+        fileName:
+          result.savedJob?.file_name ||
+          (attachedFile ? attachedFile.name : null),
+        fileSizeBytes:
+          result.savedJob?.file_size_bytes ||
+          (attachedFile ? attachedFile.size : null),
       });
     } catch (error) {
       console.error('Live scheduling failed:', error);
@@ -368,7 +377,7 @@ export default function ScheduleWorkload({
 
               <div className="form-group full-width">
                 <label className="form-label">
-                  WattTime Forecast Region
+                  WattTime Forecast Region (Balancing Authority)
                 </label>
 
                 <select
@@ -378,15 +387,84 @@ export default function ScheduleWorkload({
                   className="form-select"
                 >
                   <option value={WATTTIME_REGION}>
-                    CAISO_NORTH — Northern California
+                    CAISO_NORTH — Northern California (Grid Balancing Authority)
                   </option>
                 </select>
 
                 <small>
-                  Live forecast region configured for this
-                  integration. This is a grid region, not an
-                  AWS data-center region.
+                  Live marginal emissions forecast region configured for WattTime.
+                  This is an electricity grid balancing authority, mapped to matching cloud regions (e.g. AWS us-west-1).
                 </small>
+              </div>
+
+              {/* Workload File Upload (Phase 5) */}
+              <div className="form-group full-width">
+                <label className="form-label">
+                  Workload File / Script (Optional)
+                </label>
+
+                {!attachedFile ? (
+                  <div
+                    style={{
+                      border: '2px dashed #cbd5e1',
+                      borderRadius: 8,
+                      padding: '16px 20px',
+                      textAlign: 'center',
+                      background: 'rgba(241, 245, 249, 0.5)',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => document.getElementById('workload-file-input').click()}
+                  >
+                    <input
+                      id="workload-file-input"
+                      type="file"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setAttachedFile(e.target.files[0]);
+                        }
+                      }}
+                    />
+                    <UploadCloud size={24} style={{ color: '#10b981', marginBottom: 6 }} />
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>
+                      Click to attach a workload file or script package
+                    </div>
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                      Supports Python scripts (.py), data files (.csv, .json), bash (.sh), or archives (max 15MB)
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      borderRadius: 6,
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <FileText size={20} className="text-green-accent" />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{attachedFile.name}</div>
+                        <div style={{ fontSize: 12, color: '#64748b' }}>
+                          Client size: {(attachedFile.size / 1024).toFixed(1)} KB
+                          {attachedFile.type ? ` · ${attachedFile.type}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: '#dc2626' }}
+                      onClick={() => setAttachedFile(null)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="form-group full-width checkbox-group-box">
@@ -543,6 +621,22 @@ export default function ScheduleWorkload({
                     )}
                   </span>
                 </div>
+
+                {schedulingResult.fileName && (
+                  <div className="result-item">
+                    <span className="result-label">
+                      <FileText size={16} />
+                      Attached File
+                    </span>
+
+                    <span className="result-value">
+                      {schedulingResult.fileName}
+                      {schedulingResult.fileSizeBytes != null && (
+                        <small> ({(schedulingResult.fileSizeBytes / 1024).toFixed(1)} KB)</small>
+                      )}
+                    </span>
+                  </div>
+                )}
 
                 <div className="result-item">
                   <span className="result-label">

@@ -104,14 +104,27 @@ export async function scheduleJob(job) {
   return mapBackendJob(result.data);
 }
 
-export async function scheduleLiveJob(job) {
-  const response = await fetch(`${API_BASE_URL}/schedule-live`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(job),
-  });
+export async function scheduleLiveJob(job, file = null) {
+  let response;
+
+  if (file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("job", JSON.stringify(job));
+
+    response = await fetch(`${API_BASE_URL}/schedule-live`, {
+      method: "POST",
+      body: formData,
+    });
+  } else {
+    response = await fetch(`${API_BASE_URL}/schedule-live`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(job),
+    });
+  }
 
   let result;
 
@@ -132,37 +145,85 @@ export async function scheduleLiveJob(job) {
   return result;
 }
 
+export async function executeJob(jobId) {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/execute`, {
+    method: "POST",
+  });
 
+  let result;
+
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error("Backend returned an invalid response.");
+  }
+
+  if (!response.ok || result.success === false) {
+    throw new Error(result.message || "Failed to execute workload.");
+  }
+
+  return mapBackendJob(result.data);
+}
+
+export async function updateJobStatus(jobId, status) {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/status`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status }),
+  });
+
+  let result;
+
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error("Backend returned an invalid response.");
+  }
+
+  if (!response.ok || result.success === false) {
+    throw new Error(result.message || "Failed to update job status.");
+  }
+
+  return mapBackendJob(result.data);
+}
 
 // Convert Flask/SQLite format → React format
 export function mapBackendJob(job) {
-  return {
-    id: job.job_id,
+  if (!job) return null;
 
-    jobId: job.job_id,
+  return {
+    id: job.job_id || job.id,
+
+    jobId: job.job_id || job.id,
 
     name: job.name,
     type: job.type,
 
-    estimatedRuntime: job.estimated_runtime,
-    actualRuntime: job.actual_runtime,
+    estimatedRuntime: job.estimated_runtime ?? job.estimatedRuntime ?? 0,
+    actualRuntime: job.actual_runtime ?? job.actualRuntime ?? null,
 
     deadline: job.deadline,
-    selectedTime: job.selected_time,
-    completionTime: job.completion_time,
+    selectedTime: job.selected_time ?? job.selectedTime ?? "",
+    completionTime: job.completion_time ?? job.completionTime ?? null,
 
-    region: job.region,
+    region: job.region || job.selectedRegion || "",
 
-    carbonIntensity: job.carbon_intensity,
+    carbonIntensity: job.carbon_intensity ?? job.carbonIntensity ?? 0,
 
-    estimatedEnergy: job.estimated_energy,
-    estimatedCO2: job.estimated_co2,
-    co2Saved: job.co2_saved,
+    estimatedEnergy: job.estimated_energy ?? job.estimatedEnergy ?? 0,
+    estimatedCO2: job.estimated_co2 ?? job.estimatedCO2 ?? 0,
+    co2Saved: job.co2_saved ?? job.co2Saved ?? 0,
 
     status: job.status,
     priority: job.priority,
 
-    createdAt: job.created_at,
-    completedAt: job.completed_at,
+    fileName: job.file_name ?? job.fileName ?? null,
+    fileSizeBytes: job.file_size_bytes ?? job.fileSizeBytes ?? null,
+    fileType: job.file_type ?? job.fileType ?? null,
+
+    createdAt: job.created_at ?? job.createdAt ?? "",
+    completedAt: job.completed_at ?? job.completedAt ?? null,
   };
 }

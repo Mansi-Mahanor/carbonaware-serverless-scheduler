@@ -74,10 +74,15 @@ export default function JobTable({
               job.selectedRegion ||
               'N/A';
 
-            const carbonIntensity =
+            const rawIntensity =
               job.carbon_intensity ??
-              job.carbonIntensity ??
-              0;
+              job.carbonIntensity;
+
+            const hasIntensity =
+              rawIntensity !== null &&
+              rawIntensity !== undefined &&
+              rawIntensity !== '' &&
+              Number.isFinite(Number(rawIntensity));
 
             const status =
               job.status || 'Scheduled';
@@ -136,10 +141,14 @@ export default function JobTable({
                     />
 
                     <span>
-                      {carbonIntensity}{' '}
-                      <small>
-                        gCO₂eq/kWh
-                      </small>
+                      {hasIntensity ? (
+                        <>
+                          {Number(rawIntensity).toFixed(2)}{' '}
+                          <small>gCO₂/kWh</small>
+                        </>
+                      ) : (
+                        <span className="text-muted">N/A</span>
+                      )}
                     </span>
                   </div>
                 </td>

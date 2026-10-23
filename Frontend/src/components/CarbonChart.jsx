@@ -21,9 +21,10 @@ export default function CarbonChart({
   // Adapt WattTime forecast points to the chart's data format.
   const chartData = (Array.isArray(data) ? data : [])
     .map((point) => {
-      const intensity = Number(
-        point?.carbonIntensityGramsPerKWh
-      );
+      const rawVal =
+        point?.carbonIntensityGramsPerKWh ?? point?.carbonIntensity;
+      const intensity =
+        rawVal !== null && rawVal !== undefined ? Number(rawVal) : NaN;
 
       if (
         !point?.time ||
@@ -73,7 +74,7 @@ export default function CarbonChart({
             />
 
             <span className="tooltip-name">
-              {REGION_LABEL} MOER:
+              {selectedRegion || REGION_LABEL} MOER:
             </span>
 
             <span className="tooltip-val">
@@ -152,6 +153,7 @@ export default function CarbonChart({
             tickLine={false}
             axisLine={false}
             width={75}
+            domain={[0, (dataMax) => (Number.isFinite(dataMax) ? Math.max(150, Math.ceil(dataMax * 1.15)) : 'auto')]}
             label={{
               value: 'MOER (gCO₂/kWh)',
               angle: -90,
@@ -174,7 +176,7 @@ export default function CarbonChart({
             stroke="#10b981"
             strokeDasharray="4 4"
             label={{
-              value: 'Illustrative threshold: 135',
+              value: 'Illustrative threshold: 135 gCO₂/kWh',
               fill: '#059669',
               fontSize: 10,
               position: 'insideTopRight',

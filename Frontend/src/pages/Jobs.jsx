@@ -4,11 +4,15 @@ import { Search, Filter, ListTodo, RefreshCw } from 'lucide-react';
 
 const API_BASE_URL = 'http://127.0.0.1:5000/api';
 
-export default function Jobs() {
-  const [jobs, setJobs] = useState([]);
+export default function Jobs({
+  jobs: propJobs = null,
+  loading: propLoading = false,
+  onRefreshJobs = null,
+}) {
+  const [localJobs, setLocalJobs] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('All');
-  const [loading, setLoading] = useState(true);
+  const [localLoading, setLocalLoading] = useState(false);
   const [error, setError] = useState('');
 
   const statusOptions = [
@@ -22,7 +26,7 @@ export default function Jobs() {
 
   const fetchJobs = async () => {
     try {
-      setLoading(true);
+      setLocalLoading(true);
       setError('');
 
       const response = await fetch(`${API_BASE_URL}/jobs`);
@@ -34,7 +38,7 @@ export default function Jobs() {
       const result = await response.json();
 
       if (result.success) {
-        setJobs(result.data || []);
+        setLocalJobs(result.data || []);
       } else {
         throw new Error(result.message || 'Failed to fetch jobs');
       }
@@ -44,15 +48,28 @@ export default function Jobs() {
         'Unable to load jobs. Make sure the Flask backend is running on port 5000.'
       );
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchJobs();
-  }, []);
+    if (propJobs === null) {
+      fetchJobs();
+    }
+  }, [propJobs]);
 
-  const filteredJobs = jobs.filter((job) => {
+  const handleRefresh = async () => {
+    if (onRefreshJobs) {
+      await onRefreshJobs();
+    } else {
+      await fetchJobs();
+    }
+  };
+
+  const activeJobs = propJobs !== null ? propJobs : localJobs;
+  const isLoading = propJobs !== null ? propLoading : localLoading;
+
+  const filteredJobs = activeJobs.filter((job) => {
     const name = String(job.name || '');
     const jobId = String(job.job_id || job.id || '');
     const type = String(job.type || '');
@@ -82,11 +99,11 @@ export default function Jobs() {
 
         <button
           className="btn btn-secondary"
-          onClick={fetchJobs}
-          disabled={loading}
+          onClick={handleRefresh}
+          disabled={isLoading}
         >
           <RefreshCw size={17} />
-          {loading ? 'Loading...' : 'Refresh'}
+          {isLoading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
@@ -151,7 +168,7 @@ export default function Jobs() {
 
         <div className="card-body">
 
-          {loading ? (
+          {isLoading ? (
             <div style={{ padding: '30px', textAlign: 'center' }}>
               Loading jobs from backend...
             </div>

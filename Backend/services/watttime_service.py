@@ -176,13 +176,12 @@ def get_live_forecast(
             else:
                 nonzero_count += 1
 
+            intensity_g = round(raw_value * 0.45359237, 3)
             points.append({
                 "time": point_time,
                 "moerLbsCo2PerMWh": raw_value,
-                "carbonIntensityGramsPerKWh": round(
-                    raw_value * 0.45359237,
-                    3,
-                ),
+                "carbonIntensity": intensity_g,
+                "carbonIntensityGramsPerKWh": intensity_g,
             })
 
         if not points:

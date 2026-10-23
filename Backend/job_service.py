@@ -1,6 +1,24 @@
 from database import get_db_connection
 
 
+VALID_TRANSITIONS = {
+    "Pending": {"Pending", "Scheduled", "Running", "Failed", "Not Scheduled"},
+    "Scheduled": {"Scheduled", "Running", "Failed", "Completed", "Not Scheduled"},
+    "Running": {"Running", "Completed", "Failed"},
+    "Completed": {"Completed"},
+    "Failed": {"Failed", "Pending", "Scheduled"},
+    "Not Scheduled": {"Not Scheduled", "Scheduled", "Pending"},
+}
+
+
+def validate_status_transition(current_status, new_status):
+    """
+    Check if a status transition is permitted by the execution lifecycle.
+    """
+    allowed = VALID_TRANSITIONS.get(current_status, {current_status, new_status})
+    return new_status in allowed
+
+
 def generate_job_id():
     """
     Generate the next job ID in the format JOB-1001, JOB-1002, etc.
@@ -53,10 +71,13 @@ def create_job(job):
             co2_saved,
             status,
             priority,
+            file_name,
+            file_size_bytes,
+            file_type,
             created_at,
             completed_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         job_id,
         job.get("name", "Unnamed Job"),
@@ -73,6 +94,9 @@ def create_job(job):
         job.get("co2Saved", job.get("co2_saved", 0)),
         job.get("status", "Scheduled"),
         job.get("priority", "Normal"),
+        job.get("fileName", job.get("file_name")),
+        job.get("fileSizeBytes", job.get("file_size_bytes")),
+        job.get("fileType", job.get("file_type")),
         job.get("createdAt", job.get("created_at", "")),
         job.get("completedAt", job.get("completed_at"))
     ))
@@ -98,7 +122,14 @@ def get_all_jobs():
 
     connection.close()
 
-    return [dict(row) for row in rows]
+    jobs = []
+    for row in rows:
+        d = dict(row)
+        d["fileName"] = d.get("file_name")
+        d["fileSizeBytes"] = d.get("file_size_bytes")
+        d["fileType"] = d.get("file_type")
+        jobs.append(d)
+    return jobs
 
 
 def get_job_by_id(job_id):
@@ -119,7 +150,11 @@ def get_job_by_id(job_id):
     if row is None:
         return None
 
-    return dict(row)
+    res = dict(row)
+    res["fileName"] = res.get("file_name")
+    res["fileSizeBytes"] = res.get("file_size_bytes")
+    res["fileType"] = res.get("file_type")
+    return res
 
 
 def update_job(job_id, job):
@@ -156,6 +191,9 @@ def update_job(job_id, job):
             co2_saved = ?,
             status = ?,
             priority = ?,
+            file_name = ?,
+            file_size_bytes = ?,
+            file_type = ?,
             completed_at = ?
         WHERE job_id = ?
     """, (
@@ -173,6 +211,9 @@ def update_job(job_id, job):
         job.get("co2Saved", job.get("co2_saved", existing["co2_saved"])),
         job.get("status", existing["status"]),
         job.get("priority", existing["priority"]),
+        job.get("fileName", job.get("file_name", existing["file_name"] if "file_name" in existing.keys() else None)),
+        job.get("fileSizeBytes", job.get("file_size_bytes", existing["file_size_bytes"] if "file_size_bytes" in existing.keys() else None)),
+        job.get("fileType", job.get("file_type", existing["file_type"] if "file_type" in existing.keys() else None)),
         job.get("completedAt", job.get("completed_at", existing["completed_at"])),
         job_id
     ))

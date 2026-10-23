@@ -1,3 +1,7 @@
+import json
+import os
+from pathlib import Path
+from werkzeug.utils import secure_filename
 from services.live_scheduler import schedule_live_workload
 from services.watttime_service import get_live_forecast
 
@@ -216,13 +220,68 @@ def schedule():
 @schedule_bp.route("/schedule-live", methods=["POST"])
 def schedule_live():
     try:
-        job = request.get_json(silent=True)
+        uploaded_file = None
+        file_metadata = {
+            "file_name": None,
+            "file_size_bytes": None,
+            "file_type": None
+        }
+
+        # Support both multipart/form-data and application/json
+        if request.content_type and "multipart/form-data" in request.content_type:
+            if "job" in request.form:
+                try:
+                    job = json.loads(request.form["job"])
+                except Exception:
+                    job = {}
+            else:
+                job = request.form.to_dict()
+
+            if "file" in request.files:
+                uploaded_file = request.files["file"]
+        else:
+            job = request.get_json(silent=True)
 
         if not isinstance(job, dict):
             return jsonify({
                 "success": False,
-                "message": "A JSON job object is required."
+                "message": "A JSON or form-encoded job object is required."
             }), 400
+
+        # Type conversion for form submissions
+        if isinstance(job.get("carbonAware"), str):
+            job["carbonAware"] = job["carbonAware"].lower() in ("true", "1", "yes")
+        if isinstance(job.get("estimatedRuntime"), str):
+            try:
+                job["estimatedRuntime"] = int(job["estimatedRuntime"])
+            except ValueError:
+                pass
+
+        # Validate and process uploaded workload file if attached
+        if uploaded_file and uploaded_file.filename:
+            raw_filename = uploaded_file.filename
+            safe_name = secure_filename(raw_filename) or "workload_file.bin"
+
+            # Calculate actual file size in bytes from the server-side stream
+            uploaded_file.seek(0, os.SEEK_END)
+            actual_size_bytes = uploaded_file.tell()
+            uploaded_file.seek(0)
+
+            MAX_UPLOAD_SIZE = 15 * 1024 * 1024  # 15 MB
+            if actual_size_bytes > MAX_UPLOAD_SIZE:
+                return jsonify({
+                    "success": False,
+                    "message": f"Uploaded file exceeds the maximum limit of {MAX_UPLOAD_SIZE // (1024 * 1024)} MB."
+                }), 400
+
+            upload_dir = Path(__file__).resolve().parent.parent / "data" / "uploads"
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            saved_filename = f"{int(datetime.now().timestamp())}_{safe_name}"
+            uploaded_file.save(upload_dir / saved_filename)
+
+            file_metadata["file_name"] = raw_filename
+            file_metadata["file_size_bytes"] = actual_size_bytes
+            file_metadata["file_type"] = uploaded_file.content_type or "application/octet-stream"
 
         # Strictly validate the requested forecast horizon.
         raw_horizon = job.get("horizonHours", 24)
@@ -312,6 +371,9 @@ def schedule_live():
             "co2Saved": result["co2SavedGramsVsEarliest"],
             "status": "Scheduled",
             "priority": job.get("priority", "Normal"),
+            "file_name": file_metadata["file_name"],
+            "file_size_bytes": file_metadata["file_size_bytes"],
+            "file_type": file_metadata["file_type"],
             "createdAt": now,
             "completedAt": None
         }

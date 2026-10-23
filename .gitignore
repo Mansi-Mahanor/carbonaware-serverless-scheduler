@@ -17,3 +17,7 @@ dist/
 
 # Local runtime database
 Backend/data/scheduler.db
+
+# Ignore uploaded workload files
+Backend/data/uploads/*
+!Backend/data/uploads/.gitkeep

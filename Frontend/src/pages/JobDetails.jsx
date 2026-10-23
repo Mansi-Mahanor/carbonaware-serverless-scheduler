@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import StatusBadge from '../components/StatusBadge';
-import { getJob } from '../utils/api';
+import { getJob, executeJob } from '../utils/api';
 
 import {
   ArrowLeft,
@@ -11,10 +11,13 @@ import {
   Zap,
   Calendar,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Play,
+  FileText,
+  Info,
 } from 'lucide-react';
 
-export default function JobDetails({ jobs = [] }) {
+export default function JobDetails({ jobs = [], onUpdateJob = null }) {
 
   const { id } = useParams();
   const navigate = useNavigate();
@@ -25,6 +28,31 @@ export default function JobDetails({ jobs = [] }) {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionMessage, setExecutionMessage] = useState('');
+
+  const handleSimulateExecution = async () => {
+    if (!job?.id) return;
+    try {
+      setIsExecuting(true);
+      setExecutionMessage('');
+      const res = await executeJob(job.id);
+      if (res && res.success && res.job) {
+        setJob(res.job);
+        if (onUpdateJob) {
+          onUpdateJob(res.job);
+        }
+        setExecutionMessage('Workload executed successfully (demonstration simulation).');
+      } else {
+        throw new Error(res?.message || 'Execution simulation failed.');
+      }
+    } catch (err) {
+      console.error('Execution simulation error:', err);
+      setExecutionMessage(err.message || 'Execution failed.');
+    } finally {
+      setIsExecuting(false);
+    }
+  };
 
   // ==========================================
   // FETCH JOB FROM BACKEND
@@ -166,7 +194,7 @@ export default function JobDetails({ jobs = [] }) {
     {
       key: 'executed',
       title: 'Workload Executed',
-      desc: 'Serverless invocation on cloud provider'
+      desc: 'Simulated serverless execution on cloud provider'
     },
 
     {
@@ -246,6 +274,44 @@ export default function JobDetails({ jobs = [] }) {
 
         </div>
 
+      </div>
+
+      {/* DEMONSTRATION SIMULATION BANNER */}
+      <div className="card" style={{ marginBottom: 20, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+        <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '12px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 260 }}>
+            <Info size={20} className="text-muted" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: '#475569' }}>
+              <strong>Demonstration Mode:</strong> Workload execution simulates completion, records actual runtime, and registers carbon savings without calling external cloud provider APIs.
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {['Scheduled', 'Pending'].includes(job.status) && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleSimulateExecution}
+                disabled={isExecuting}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <Play size={15} />
+                <span>{isExecuting ? 'Simulating...' : 'Simulate Cloud Execution'}</span>
+              </button>
+            )}
+
+            {job.status === 'Completed' && (
+              <span className="badge-carbon status-low" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <CheckCircle2 size={13} /> Completed (Simulation)
+              </span>
+            )}
+          </div>
+        </div>
+        {executionMessage && (
+          <div style={{ padding: '0 18px 12px', fontSize: 13, color: executionMessage.includes('failed') ? '#dc2626' : '#10b981' }}>
+            {executionMessage}
+          </div>
+        )}
       </div>
 
 
@@ -348,11 +414,11 @@ export default function JobDetails({ jobs = [] }) {
 
                 <span className="prop-label">
                   <Globe size={16} />
-                  AWS Region
+                  Grid Balancing Authority
                 </span>
 
                 <span className="prop-value">
-                  {job.region}
+                  {job.region || 'CAISO_NORTH'}
                 </span>
 
               </div>
@@ -366,7 +432,9 @@ export default function JobDetails({ jobs = [] }) {
                 </span>
 
                 <span className="prop-value">
-                  {job.carbonIntensity} gCO₂eq/kWh
+                  {job.carbonIntensity != null && Number.isFinite(Number(job.carbonIntensity))
+                    ? `${Number(job.carbonIntensity).toFixed(2)} gCO₂/kWh`
+                    : 'N/A'}
                 </span>
 
               </div>
@@ -380,7 +448,7 @@ export default function JobDetails({ jobs = [] }) {
                 </span>
 
                 <span className="prop-value">
-                  {job.estimatedEnergy || 0.75} kWh
+                  {job.estimatedEnergy != null ? `${job.estimatedEnergy} kWh` : 'N/A'}
                 </span>
 
               </div>
@@ -395,8 +463,34 @@ export default function JobDetails({ jobs = [] }) {
 
                 <span className="prop-value text-green-accent font-medium">
 
-                  {job.estimatedCO2 || 0} gCO₂
+                  {job.estimatedCO2 != null ? `${job.estimatedCO2} gCO₂` : 'N/A'}
 
+                </span>
+
+              </div>
+
+
+              <div className="prop-item">
+
+                <span className="prop-label">
+                  <FileText size={16} />
+                  Workload File
+                </span>
+
+                <span className="prop-value">
+                  {job.fileName || job.file_name ? (
+                    <>
+                      <strong>{job.fileName || job.file_name}</strong>
+                      <span className="text-muted" style={{ fontSize: 12, display: 'block' }}>
+                        {(job.fileSizeBytes ?? job.file_size_bytes) != null
+                          ? `${Number(job.fileSizeBytes ?? job.file_size_bytes).toLocaleString()} bytes (${((job.fileSizeBytes ?? job.file_size_bytes) / 1024).toFixed(1)} KB)`
+                          : ''}
+                        {(job.fileType || job.file_type) ? ` · ${job.fileType || job.file_type}` : ''}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-muted">No file attached</span>
+                  )}
                 </span>
 
               </div>

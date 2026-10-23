@@ -13,8 +13,11 @@ export default function Header({
   const region = forecastInfo.region || 'CAISO_NORTH';
   const source = forecastInfo.source || 'WattTime';
 
-  const intensity = Number(currentIntensity);
-  const hasIntensity = Number.isFinite(intensity);
+  const hasIntensity =
+    currentIntensity !== null &&
+    currentIntensity !== undefined &&
+    Number.isFinite(Number(currentIntensity));
+  const intensity = hasIntensity ? Number(currentIntensity) : null;
 
   const getTitle = () => {
     switch (location.pathname) {

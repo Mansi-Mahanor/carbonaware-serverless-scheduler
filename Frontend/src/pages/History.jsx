@@ -54,17 +54,25 @@ export default function History({ jobs = [] }) {
                       <td>
                         <div className="carbon-intensity-cell">
                           <Leaf size={14} className="leaf-icon" />
-                          <span>{job.carbonIntensity} <small>gCO₂/kWh</small></span>
+                          <span>
+                            {job.carbonIntensity != null && Number.isFinite(Number(job.carbonIntensity)) ? (
+                              <>
+                                {Number(job.carbonIntensity).toFixed(2)} <small>gCO₂/kWh</small>
+                              </>
+                            ) : (
+                              'N/A'
+                            )}
+                          </span>
                         </div>
                       </td>
                       <td>
                         <div className="flex-center gap-xs">
                           <Zap size={14} className="text-amber" />
-                          <span>{job.estimatedEnergy || 0.75} kWh</span>
+                          <span>{job.estimatedEnergy != null ? `${job.estimatedEnergy} kWh` : 'N/A'}</span>
                         </div>
                       </td>
                       <td className="font-medium text-green-accent">
-                        {job.estimatedCO2 || 95.0} gCO₂
+                        {job.estimatedCO2 != null ? `${job.estimatedCO2} gCO₂` : 'N/A'}
                       </td>
                       <td>{job.completedAt || job.createdAt}</td>
                       <td>
