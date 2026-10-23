@@ -101,9 +101,10 @@ def get_live_forecast(
                 "WattTime forecast response must be a JSON object."
             )
 
-        raw_points = payload.get("data")
+        raw_points = payload.get("data") 
         
         
+        raw_pomtes = payload.get ("data ")
        
         # Temporary diagnostic: inspect forecast values.
         meta = payload.get("meta", {})
